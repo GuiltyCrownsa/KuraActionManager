@@ -1,0 +1,22 @@
+{
+  "name": "com.kura.actionmanager.editor",
+  "rootNamespace": "Kura.ActionInstaller",
+  "references": [
+    "VRCSDK3A",
+    "VRCSDKBase",
+    "VRC.SDK3.Dynamics.Contact",
+    "nadena.dev.modular-avatar.core",
+    "nadena.dev.ndmf"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

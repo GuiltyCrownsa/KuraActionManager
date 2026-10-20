@@ -1,0 +1,20 @@
+{
+  "name": "com.kura.actionmanager",
+  "displayName": "Kura 动作管理器",
+  "version": "1.0.0",
+  "unity": "2022.3",
+  "description": "VRChat 动作管理器：动作分组与多级菜单、批量导入、缩略图、循环动作、镜像与速度、同步舞蹈、物件开关，一键安装到 Avatar。",
+  "author": {
+    "name": "王冠Kura",
+    "email": "GuiltyCrownsa@users.noreply.github.com",
+    "url": "https://github.com/GuiltyCrownsa/KuraActionManager"
+  },
+  "license": "MIT",
+  "legacyFolders": {
+    "Assets\\KuraActionInstaller\\Editor": "505facb6d50684e439d736d141931a86"
+  },
+  "vpmDependencies": {
+    "com.vrchat.avatars": ">=3.7.0 <3.11.0",
+    "nadena.dev.modular-avatar": ">=1.10.0"
+  }
+}

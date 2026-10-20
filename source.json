@@ -1,0 +1,19 @@
+{
+  "name": "Kura Action Manager",
+  "id": "com.kura.listing",
+  "url": "https://guiltycrownsa.github.io/KuraActionManager/index.json",
+  "author": {
+    "name": "王冠Kura",
+    "email": "GuiltyCrownsa@users.noreply.github.com",
+    "url": "https://github.com/GuiltyCrownsa"
+  },
+  "description": "Kura 动作管理器的 VPM 包列表",
+  "infoLink": {
+    "url": "https://github.com/GuiltyCrownsa/KuraActionManager",
+    "text": "GitHub"
+  },
+  "githubRepos": [
+    "GuiltyCrownsa/KuraActionManager"
+  ],
+  "packages": []
+}
