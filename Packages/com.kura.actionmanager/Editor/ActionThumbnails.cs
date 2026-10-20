@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Animations;
+using UnityEngine.Rendering;
 using UnityEngine.Playables;
 using nadena.dev.modular_avatar.core;
 using Object = UnityEngine.Object;
@@ -30,6 +31,71 @@ namespace Kura.ActionInstaller
             return t;
         }
 
+        // PreviewRenderUtility has its own two directional lights and knows nothing
+        // about the scene, which is why the old thumbs looked darker than the lit
+        // scene. Mirror the scene's lights into the preview instead, at their real
+        // world positions, and keep the scene ambient. Only fall back to a neutral
+        // studio when the scene has no lights at all.
+        static void ApplySceneLighting(PreviewRenderUtility preview)
+        {
+            Color ambient;
+            switch (RenderSettings.ambientMode)
+            {
+                case AmbientMode.Trilight:
+                    ambient = (RenderSettings.ambientSkyColor + RenderSettings.ambientEquatorColor + RenderSettings.ambientGroundColor) / 3f;
+                    break;
+                case AmbientMode.Flat:
+                    ambient = RenderSettings.ambientLight;
+                    break;
+                default:
+                    ambient = RenderSettings.ambientSkyColor;
+                    break;
+            }
+            ambient *= Mathf.Max(RenderSettings.ambientIntensity, 1f);
+            const float ambientFloor = .42f;
+            preview.ambientColor = new Color(
+                Mathf.Max(ambient.r, ambientFloor),
+                Mathf.Max(ambient.g, ambientFloor),
+                Mathf.Max(ambient.b, ambientFloor));
+
+            int copied = 0;
+            foreach (var source in Object.FindObjectsOfType<Light>())
+            {
+                if (source == null || !source.enabled || !source.gameObject.activeInHierarchy) continue;
+                if (source.type == LightType.Area) continue;
+                if (copied >= 8) break;
+                var go = new GameObject("KuraPreviewLight");
+                go.transform.SetPositionAndRotation(source.transform.position, source.transform.rotation);
+                var light = go.AddComponent<Light>();
+                EditorUtility.CopySerialized(source, light);
+                light.color = Color.Lerp(light.color, Color.white, .35f);
+                preview.AddSingleGO(go);
+                copied++;
+            }
+
+            preview.lights[0].intensity = 0f;
+            preview.lights[1].intensity = 0f;
+            if (copied > 0)
+            {
+                // A single scene light gives a very hard, one-sided read on a transparent
+                // icon; add a weak front fill without changing the key direction.
+                if (copied == 1)
+                {
+                    preview.lights[1].color = Color.white;
+                    preview.lights[1].intensity = .35f;
+                    preview.lights[1].transform.rotation = Quaternion.Euler(330, 20, 0);
+                }
+                return;
+            }
+
+            preview.lights[0].color = Color.white;
+            preview.lights[0].intensity = 1.4f;
+            preview.lights[0].transform.rotation = Quaternion.Euler(35, 155, 0);
+            preview.lights[1].color = Color.white;
+            preview.lights[1].intensity = .65f;
+            preview.lights[1].transform.rotation = Quaternion.Euler(330, 20, 0);
+        }
+
         public static Texture2D Capture(GameObject avatar, AnimationClip clip, float time)
         {
             if (avatar == null || clip == null) throw new InvalidOperationException("请先选择角色和动作。");
@@ -44,8 +110,9 @@ namespace Kura.ActionInstaller
                 var map = new Dictionary<Transform, Transform>();
                 clone = CopyTransforms(avatar.transform, null, map).gameObject;
                 preview.AddSingleGO(clone);
-                clone.transform.position = Vector3.zero;
-                clone.transform.rotation = Quaternion.identity;
+                // Keep the avatar where it stands so the scene's lights hit it from
+                // the same angles as in the editor view.
+                clone.transform.SetPositionAndRotation(avatar.transform.position, avatar.transform.rotation);
                 clone.transform.localScale = avatar.transform.lossyScale;
                 clone.SetActive(true);
                 foreach (var src in avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -150,33 +217,87 @@ namespace Kura.ActionInstaller
                 camera.transform.LookAt(bounds.center);
                 camera.nearClipPlane = .01f;
                 camera.farClipPlane = distance * 3;
-                preview.ambientColor = new Color(.65f, .65f, .65f);
-                preview.lights[0].intensity = 1.1f;
-                preview.lights[0].transform.rotation = Quaternion.Euler(35, 155, 0);
-                preview.lights[1].intensity = .8f;
-                preview.lights[1].transform.rotation = Quaternion.Euler(320, 25, 0);
-                preview.BeginPreview(new Rect(0, 0, 256, 256), GUIStyle.none);
+                ApplySceneLighting(preview);
+                const int outputSize = 256;
+                int renderSize = outputSize * 2;
+                preview.BeginPreview(new Rect(0, 0, renderSize, renderSize), GUIStyle.none);
                 preview.Render(true);
                 var rendered = (RenderTexture)preview.EndPreview();
                 var previous = RenderTexture.active;
                 try
                 {
                     RenderTexture.active = rendered;
-                    result = new Texture2D(256, 256, TextureFormat.RGBA32, false);
-                    result.ReadPixels(new Rect(0, 0, 256, 256), 0, 0);
+                    int width = Mathf.Max(outputSize, rendered.width);
+                    int height = Mathf.Max(outputSize, rendered.height);
+                    result = new Texture2D(width, height, TextureFormat.RGBA32, false);
+                    result.ReadPixels(new Rect(0, 0, width, height), 0, 0);
                     result.Apply();
                 }
                 finally { RenderTexture.active = previous; }
-                var centered = CenterVisiblePixels(result);
+                var centered = CenterVisiblePixels(result, outputSize);
+                BleedEdges(centered);
                 Object.DestroyImmediate(result);
                 return centered;
             }
             finally { if (graph.IsValid()) graph.Destroy(); preview.Cleanup(); }
         }
 
+        // Transparent pixels default to black RGB; Unity scales the icon at draw time
+        // and the filter then pulls that black into the silhouette, which reads as a
+        // dark, smudged edge. Spread the nearby colour a few pixels outward instead.
+        static void BleedEdges(Texture2D texture, int passes = 2)
+        {
+            int width = texture.width, height = texture.height;
+            var colors = texture.GetPixels();
+            var valid = new bool[colors.Length];
+            for (int i = 0; i < colors.Length; i++) valid[i] = colors[i].a > 0f;
+            for (int pass = 0; pass < passes; pass++)
+            {
+                var nextColors = (Color[])colors.Clone();
+                var nextValid = (bool[])valid.Clone();
+                bool changed = false;
+                for (int y = 0; y < height; y++)
+                    for (int x = 0; x < width; x++)
+                    {
+                        int i = y * width + x;
+                        if (valid[i]) continue;
+                        Color sum = Color.clear;
+                        int count = 0;
+                        for (int dy = -1; dy <= 1; dy++)
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int nx = x + dx, ny = y + dy;
+                                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                                int j = ny * width + nx;
+                                if (!valid[j]) continue;
+                                sum += colors[j];
+                                count++;
+                            }
+                        if (count == 0) continue;
+                        nextColors[i] = new Color(sum.r / count, sum.g / count, sum.b / count, 0f);
+                        nextValid[i] = true;
+                        changed = true;
+                    }
+                colors = nextColors;
+                valid = nextValid;
+                if (!changed) break;
+            }
+            texture.SetPixels(colors);
+            texture.Apply();
+        }
+
         // Skinned mesh bounds include invisible vertices and accessories. Frame
         // the pixels actually rendered instead, so asymmetric poses stay centered.
         public static Texture2D CenterVisiblePixels(Texture2D source)
+        {
+            return CenterVisiblePixels(source, 256);
+        }
+
+        // `source` is rendered at 2x and averaged down here, which removes the jaggies
+        // without making the saved PNG any bigger. Samples are alpha-premultiplied so
+        // transparent edge pixels do not darken the outline.
+        public static Texture2D CenterVisiblePixels(Texture2D source, int size)
         {
             var pixels = source.GetPixels32();
             int minX = source.width, minY = source.height, maxX = -1, maxY = -1;
@@ -184,20 +305,62 @@ namespace Kura.ActionInstaller
                 for (int x = 0; x < source.width; x++)
                     if (pixels[y * source.width + x].a > 8)
                     { minX = Mathf.Min(minX, x); maxX = Mathf.Max(maxX, x); minY = Mathf.Min(minY, y); maxY = Mathf.Max(maxY, y); }
-            var result = new Texture2D(256, 256, TextureFormat.RGBA32, false);
-            var output = new Color[256 * 256];
+            var result = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var output = new Color[size * size];
             if (maxX >= 0)
             {
                 float extent = Mathf.Max(maxX - minX + 1, maxY - minY + 1) / .88f;
                 float centerX = (minX + maxX + 1) * .5f, centerY = (minY + maxY + 1) * .5f;
-                for (int y = 0; y < 256; y++)
-                    for (int x = 0; x < 256; x++)
+                float step = extent / size;
+                float[] offsets = { -.25f, .25f };
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
                     {
-                        float sx = centerX + ((x + .5f) / 256 - .5f) * extent;
-                        float sy = centerY + ((y + .5f) / 256 - .5f) * extent;
-                        if (sx >= 0 && sy >= 0 && sx < source.width && sy < source.height)
-                            output[y * 256 + x] = source.GetPixelBilinear(sx / source.width, sy / source.height);
+                        float sx = centerX + ((x + .5f) / size - .5f) * extent;
+                        float sy = centerY + ((y + .5f) / size - .5f) * extent;
+                        Color sum = Color.clear;
+                        int count = 0;
+                        for (int oy = 0; oy < 2; oy++)
+                            for (int ox = 0; ox < 2; ox++)
+                            {
+                                float px = sx + offsets[ox] * step, py = sy + offsets[oy] * step;
+                                if (px < 0 || py < 0 || px >= source.width || py >= source.height) continue;
+                                var c = source.GetPixelBilinear(px / source.width, py / source.height);
+                                sum += new Color(c.r * c.a, c.g * c.a, c.b * c.a, c.a);
+                                count++;
+                            }
+                        if (count == 0) continue;
+                        sum /= count;
+                        output[y * size + x] = sum.a > 0.0001f
+                            ? new Color(sum.r / sum.a, sum.g / sum.a, sum.b / sum.a, sum.a)
+                            : Color.clear;
                     }
+
+                // Dark outfits read as muddy on a transparent icon. Lift the whole
+                // shot a little when it comes out under-exposed, and never darken
+                // a shot that is already bright.
+                float luma = 0f, weight = 0f;
+                foreach (var c in output)
+                {
+                    if (c.a <= 0f) continue;
+                    luma += (0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b) * c.a;
+                    weight += c.a;
+                }
+                if (weight > 0f)
+                {
+                    float mean = luma / weight;
+                    const float target = .46f;
+                    if (mean > .002f && mean < target)
+                    {
+                        float gain = Mathf.Min(1.8f, target / mean);
+                        for (int i = 0; i < output.Length; i++)
+                        {
+                            var c = output[i];
+                            if (c.a <= 0f) continue;
+                            output[i] = new Color(Mathf.Min(1f, c.r * gain), Mathf.Min(1f, c.g * gain), Mathf.Min(1f, c.b * gain), c.a);
+                        }
+                    }
+                }
             }
             result.SetPixels(output); result.Apply(); return result;
         }
