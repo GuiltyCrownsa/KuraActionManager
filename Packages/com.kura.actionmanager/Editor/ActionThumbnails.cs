@@ -335,32 +335,6 @@ namespace Kura.ActionInstaller
                             ? new Color(sum.r / sum.a, sum.g / sum.a, sum.b / sum.a, sum.a)
                             : Color.clear;
                     }
-
-                // Dark outfits read as muddy on a transparent icon. Lift the whole
-                // shot a little when it comes out under-exposed, and never darken
-                // a shot that is already bright.
-                float luma = 0f, weight = 0f;
-                foreach (var c in output)
-                {
-                    if (c.a <= 0f) continue;
-                    luma += (0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b) * c.a;
-                    weight += c.a;
-                }
-                if (weight > 0f)
-                {
-                    float mean = luma / weight;
-                    const float target = .46f;
-                    if (mean > .002f && mean < target)
-                    {
-                        float gain = Mathf.Min(1.8f, target / mean);
-                        for (int i = 0; i < output.Length; i++)
-                        {
-                            var c = output[i];
-                            if (c.a <= 0f) continue;
-                            output[i] = new Color(Mathf.Min(1f, c.r * gain), Mathf.Min(1f, c.g * gain), Mathf.Min(1f, c.b * gain), c.a);
-                        }
-                    }
-                }
             }
             result.SetPixels(output); result.Apply(); return result;
         }
