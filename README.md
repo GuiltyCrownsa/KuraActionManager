@@ -2,6 +2,20 @@
 
 VRChat Avatar 用的动作管理器：动作分组与多级菜单、批量导入、缩略图拍摄、循环动作、镜像与变速、同步舞蹈、物件开关，一键安装进 Avatar。
 
+## 界面
+
+**动作编排**：左侧管理大菜单分组与容量，右侧拖入动作、配乐、缩略图、后续动画。
+
+![动作编排](Docs/screenshots/01-arrange.png)
+
+**缩略图**：批量拍摄、单张重拍、补齐缺失；透明背景，按可见像素自动居中。
+
+![缩略图](Docs/screenshots/02-thumbnails.png)
+
+**设置**：高度调整、头部固定、动作镜像/变速、同步舞蹈、物件开关等统一在这里配置，底部显示参数占用 bit 数。
+
+![设置](Docs/screenshots/03-settings.png)
+
 ## 通过 VCC / ALCOM 安装
 
 1. 打开 VCC（或 ALCOM）→ **Settings → Packages**
