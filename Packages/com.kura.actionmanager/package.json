@@ -1,7 +1,7 @@
 {
   "name": "com.kura.actionmanager",
   "displayName": "Kura 动作管理器",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "unity": "2022.3",
   "description": "VRChat 动作管理器：动作分组与多级菜单、批量导入、缩略图、循环动作、镜像与速度、同步舞蹈、物件开关，一键安装到 Avatar。",
   "author": {
